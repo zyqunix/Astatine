@@ -2,17 +2,12 @@
 #include <cmath>
 #include <mmsystem.h>
 #include <thread>
-#include <atomic>
 #include <math.h>
 
 #define M_PI 3.14159265358979323846
 #pragma comment(lib, "winmm.lib")
 
 BOOL WINAPI SetProcessDPIAware(void);
-
-std::atomic<bool> stopThread0(false);
-std::atomic<bool> stopShader1(false);
-std::atomic<bool> stopPayload(false);
 
 DWORD xs;
 VOID SeedXorshift32(DWORD dwSeed) {
@@ -76,7 +71,7 @@ DWORD WINAPI bounce(LPVOID lpParam) {
     int x = 10, y = 10;
     int increment = 10;
 
-    while (!stopThread0.load()) {
+    while (1) {
         HDC hdc = GetDC(NULL);
         if (!hdc) break;
 
@@ -108,7 +103,7 @@ DWORD WINAPI triangle(LPVOID lpParam) {
     int increment = 10;
     float angle = 0.0f;
 
-    while (!stopThread0.load()) {
+    while (1) {
         HDC hdc = GetDC(NULL);
         if (!hdc) break;
 
@@ -290,7 +285,7 @@ DWORD WINAPI shader1(LPVOID lpParam) {
     _RGBQUAD* data = (_RGBQUAD*)VirtualAlloc(nullptr, w * h * sizeof(_RGBQUAD), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     if (!data) return 1;
 
-    while (!stopShader1.load()) {
+    while (1) {
         HDC desk = GetDC(NULL);
         if (!desk) break;
 
@@ -427,33 +422,253 @@ DWORD WINAPI shader5(LPVOID lpParam) {
     return 0;
 }
 
+DWORD WINAPI shader6(LPVOID lpParam) {
+    int w = GetSystemMetrics(0), h = GetSystemMetrics(1);
+    _RGBQUAD* data = (_RGBQUAD*)VirtualAlloc(0, w * h * sizeof(_RGBQUAD), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    if (!data) return 1;
+
+    while (true) {
+        HDC desk = GetDC(NULL);
+        HDC memDC = CreateCompatibleDC(desk);
+        HBITMAP hbm = CreateCompatibleBitmap(desk, w, h);
+        SelectObject(memDC, hbm);
+        BitBlt(memDC, 0, 0, w, h, desk, 0, 0, SRCCOPY);
+        GetBitmapBits(hbm, w * h * sizeof(_RGBQUAD), data);
+
+        double angle = GetTickCount() / 1000.0;
+        double cosA = cos(angle), sinA = sin(angle);
+        int cx = w / 2, cy = h / 2;
+
+        _RGBQUAD* temp = (_RGBQUAD*)VirtualAlloc(0, w * h * sizeof(_RGBQUAD), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+        if (!temp) break;
+
+        for (int y = 0; y < h; y++) {
+            int offset = (int)(10 * sin(y / 15.0 + GetTickCount() / 10.0));
+            for (int x = 0; x < w; x++) {
+                int srcX = x - offset;
+                int dx = srcX - cx;
+                int dy = y - cy;
+                int rx = (int)(cosA * dx - sinA * dy + cx);
+                int ry = (int)(sinA * dx + cosA * dy + cy);
+
+                if (rx >= 0 && rx < w && ry >= 0 && ry < h)
+                    temp[y * w + x] = data[ry * w + rx];
+                else
+                    temp[y * w + x] = { 0 };
+            }
+        }
+
+        SetBitmapBits(hbm, w * h * sizeof(_RGBQUAD), temp);
+        BitBlt(desk, 0, 0, w, h, memDC, 0, 0, SRCCOPY);
+
+        VirtualFree(temp, 0, MEM_RELEASE);
+        DeleteObject(hbm);
+        DeleteDC(memDC);
+        ReleaseDC(NULL, desk);
+    }
+
+    VirtualFree(data, 0, MEM_RELEASE);
+    return 0;
+}
+
+DWORD WINAPI shader7(LPVOID lpParam) {
+    int w = GetSystemMetrics(0), h = GetSystemMetrics(1);
+    _RGBQUAD* data = (_RGBQUAD*)VirtualAlloc(0, w * h * sizeof(_RGBQUAD), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    if (!data) return 1;
+
+    while (true) {
+        HDC desk = GetDC(NULL);
+        HDC memDC = CreateCompatibleDC(desk);
+        HBITMAP hbm = CreateCompatibleBitmap(desk, w, h);
+        SelectObject(memDC, hbm);
+        BitBlt(memDC, 0, 0, w, h, desk, 0, 0, SRCCOPY);
+        GetBitmapBits(hbm, w * h * sizeof(_RGBQUAD), data);
+
+        _RGBQUAD* temp = (_RGBQUAD*)VirtualAlloc(0, w * h * sizeof(_RGBQUAD), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+        if (!temp) break;
+
+        int cx = w / 2, cy = h / 2;
+        double time = GetTickCount() / 200.0;
+
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                int dx = x - cx, dy = y - cy;
+                double dist = sqrt(dx * dx + dy * dy);
+                int offset = (int)(10 * sin(dist / 20.0 - time));
+                int srcX = x + (dx * offset / (dist + 1));
+                int srcY = y + (dy * offset / (dist + 1));
+
+                if (srcX >= 0 && srcX < w && srcY >= 0 && srcY < h)
+                    temp[y * w + x] = data[srcY * w + srcX];
+                else
+                    temp[y * w + x] = { 0 };
+            }
+        }
+
+        SetBitmapBits(hbm, w * h * sizeof(_RGBQUAD), temp);
+        BitBlt(desk, 0, 0, w, h, memDC, 0, 0, SRCCOPY);
+
+        VirtualFree(temp, 0, MEM_RELEASE);
+        DeleteObject(hbm);
+        DeleteDC(memDC);
+        ReleaseDC(NULL, desk);
+        Sleep(10);
+    }
+
+    VirtualFree(data, 0, MEM_RELEASE);
+    return 0;
+}
+
+DWORD WINAPI shader8(LPVOID lpParam) {
+    int w = GetSystemMetrics(0), h = GetSystemMetrics(1);
+    _RGBQUAD* data = (_RGBQUAD*)VirtualAlloc(0, w * h * 4, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    if (!data) return 1;
+
+    while (true) {
+        HDC desk = GetDC(NULL), memDC = CreateCompatibleDC(desk);
+        HBITMAP hbm = CreateCompatibleBitmap(desk, w, h);
+        SelectObject(memDC, hbm);
+        BitBlt(memDC, 0, 0, w, h, desk, 0, 0, SRCCOPY);
+        GetBitmapBits(hbm, w * h * 4, data);
+
+        double t = GetTickCount() / 300.0;
+        for (int i = 0; i < w * h; i++) {
+            data[i].r = (BYTE)(data[i].r * fabs(sin(t)));
+            data[i].g = (BYTE)(data[i].g * fabs(sin(t + 1)));
+            data[i].b = (BYTE)(data[i].b * fabs(sin(t + 2)));
+        }
+
+        SetBitmapBits(hbm, w * h * 4, data);
+        BitBlt(desk, 0, 0, w, h, memDC, 0, 0, SRCCOPY);
+        DeleteObject(hbm); DeleteDC(memDC); ReleaseDC(NULL, desk);
+        Sleep(16);
+    }
+
+    VirtualFree(data, 0, MEM_RELEASE);
+    return 0;
+}
+
+DWORD WINAPI shader9(LPVOID lpParam) {
+    int w = GetSystemMetrics(0), h = GetSystemMetrics(1);
+    _RGBQUAD* data = (_RGBQUAD*)VirtualAlloc(0, w * h * 4, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    if (!data) return 1;
+
+    while (true) {
+        HDC desk = GetDC(NULL), memDC = CreateCompatibleDC(desk);
+        HBITMAP hbm = CreateCompatibleBitmap(desk, w, h);
+        SelectObject(memDC, hbm);
+        BitBlt(memDC, 0, 0, w, h, desk, 0, 0, SRCCOPY);
+        GetBitmapBits(hbm, w * h * 4, data);
+
+        for (int y = 0; y < h; y++) {
+            int offset = (int)(10 * sin(y / 20.0));
+            memmove(data + y * w, data + y * w + offset, (w - abs(offset)) * sizeof(_RGBQUAD));
+        }
+
+        SetBitmapBits(hbm, w * h * 4, data);
+        BitBlt(desk, 0, 0, w, h, memDC, 0, 0, SRCCOPY);
+        DeleteObject(hbm); DeleteDC(memDC); ReleaseDC(NULL, desk);
+        Sleep(16);
+    }
+
+    VirtualFree(data, 0, MEM_RELEASE);
+    return 0;
+}
+
+DWORD WINAPI shader10(LPVOID lpParam) {
+    int w = GetSystemMetrics(0), h = GetSystemMetrics(1);
+    _RGBQUAD* data = (_RGBQUAD*)VirtualAlloc(0, w * h * 4, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    if (!data) return 1;
+
+    while (true) {
+        HDC desk = GetDC(NULL), memDC = CreateCompatibleDC(desk);
+        HBITMAP hbm = CreateCompatibleBitmap(desk, w, h);
+        SelectObject(memDC, hbm);
+        BitBlt(memDC, 0, 0, w, h, desk, 0, 0, SRCCOPY);
+        GetBitmapBits(hbm, w * h * 4, data);
+
+        for (int i = 0; i < w * h; i++) {
+            data[i].r = 255 - data[i].r;
+            data[i].g = 255 - data[i].g;
+            data[i].b = 255 - data[i].b;
+        }
+
+        SetBitmapBits(hbm, w * h * 4, data);
+        BitBlt(desk, 0, 0, w, h, memDC, 0, 0, SRCCOPY);
+        DeleteObject(hbm); DeleteDC(memDC); ReleaseDC(NULL, desk);
+        Sleep(1000);
+    }
+
+    VirtualFree(data, 0, MEM_RELEASE);
+    return 0;
+}
+
+DWORD WINAPI shader11(LPVOID lpParam) {
+    int w = GetSystemMetrics(0), h = GetSystemMetrics(1);
+    _RGBQUAD* data = (_RGBQUAD*)VirtualAlloc(0, w * h * 4, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    if (!data) return 1;
+
+    while (true) {
+        HDC desk = GetDC(NULL), memDC = CreateCompatibleDC(desk);
+        HBITMAP hbm = CreateCompatibleBitmap(desk, w, h);
+        SelectObject(memDC, hbm);
+        BitBlt(memDC, 0, 0, w, h, desk, 0, 0, SRCCOPY);
+        GetBitmapBits(hbm, w * h * 4, data);
+
+        for (int y = 1; y < h - 1; y++) {
+            for (int x = 1; x < w - 1; x++) {
+                int i = y * w + x;
+                BYTE r = 0, g = 0, b = 0;
+                for (int j = -1; j <= 1; j++)
+                    for (int k = -1; k <= 1; k++) {
+                        int idx = (y + j) * w + (x + k);
+                        r += data[idx].r / 9;
+                        g += data[idx].g / 9;
+                        b += data[idx].b / 9;
+                    }
+                data[i].r = r; data[i].g = g; data[i].b = b;
+            }
+        }
+
+        SetBitmapBits(hbm, w * h * 4, data);
+        BitBlt(desk, 0, 0, w, h, memDC, 0, 0, SRCCOPY);
+        DeleteObject(hbm); DeleteDC(memDC); ReleaseDC(NULL, desk);
+        Sleep(16);
+    }
+
+    VirtualFree(data, 0, MEM_RELEASE);
+    return 0;
+}
+
+DWORD WINAPI shader12(LPVOID lpParam) {
+    int w = GetSystemMetrics(0), h = GetSystemMetrics(1);
+    _RGBQUAD* data = (_RGBQUAD*)VirtualAlloc(0, (w * h + w) * sizeof(_RGBQUAD), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    for (int i = 0;; i++, i %= 8) {
+        HDC desk = GetDC(NULL);
+        HDC hdcdc = CreateCompatibleDC(desk);
+        HBITMAP hbm = CreateBitmap(w, h, 1, 32, data);
+        SelectObject(hdcdc, hbm);
+        BitBlt(hdcdc, 0, 0, w, h, desk, 0, 0, SRCCOPY);
+        GetBitmapBits(hbm, w * h * 4, data);
+        for (int i = 0; i < w * h; i++) {
+            int x = i % w, y = i / h;
+            data[i].rgb = RGB(x % 256, y % 256, (x + y) % 256); ;
+        }
+        SetBitmapBits(hbm, w * h * 4, data);
+        BitBlt(desk, 0, 0, w, h, hdcdc, 0, 0, SRCCOPY);
+        DeleteObject(hbm);
+        DeleteObject(hdcdc);
+        DeleteObject(desk);
+    }
+    return 0;
+}
+
 DWORD WINAPI meltX(LPVOID lpParam) {
     int w = GetSystemMetrics(0), h = GetSystemMetrics(1), x;
     while (1) {
         HDC hdc = GetDC(0);
         x = rand() % w;
         BitBlt(hdc, x, 0, 10, h, hdc, x, 1, SRCCOPY);
-        ReleaseDC(0, hdc);
-    }
-}
-
-DWORD WINAPI meltY(LPVOID lpParam) {
-    int w = GetSystemMetrics(0), h = GetSystemMetrics(1), y;
-    while (1) {
-        HDC hdc = GetDC(0);
-        y = rand() % h;
-        BitBlt(hdc, 0, y, 10, h, hdc, 1, y, SRCCOPY);
-        ReleaseDC(0, hdc);
-    }
-}
-
-DWORD WINAPI meltXY(LPVOID lpParam) {
-    int w = GetSystemMetrics(0), h = GetSystemMetrics(1), x, y;
-    while (1) {
-        HDC hdc = GetDC(0);
-        x = rand() % w;
-        y = rand() % h;
-        BitBlt(hdc, x, y, 10, h, hdc, x, y, SRCCOPY);
         ReleaseDC(0, hdc);
     }
 }
@@ -533,20 +748,6 @@ VOID WINAPI sound5() {
     waveOutClose(hWaveOut);
 }
 
-VOID WINAPI sound6() {
-    HWAVEOUT hWaveOut = 0;
-    WAVEFORMATEX wfx = { WAVE_FORMAT_PCM, 1, 8000, 4000, 1, 8, 0 };
-    waveOutOpen(&hWaveOut, WAVE_MAPPER, &wfx, 0, 0, CALLBACK_NULL);
-    char buffer[4000 * 20] = {};
-    for (DWORD t = 0; t < sizeof(buffer); ++t) 
-        buffer[t] = static_cast<char>(t & 64 | t >> 5) >> 4 ^ (t & sizeof(buffer) | t >> 8) * (t & 33 | t >> (t & 64 | t >> 5) ^ (t & 33 | t >> 8) ^ (t & 14 | t >> 9 | t & 76) ^ (t | 187) ^ t * (t >> 8 & 838 + t >> 13) & 644 * (t >> 8 & 838 + t >> 13)) * ((t << 1) + (t >> 7) & t >> 6) * (t & 33 | t >> 8) * (t & 33 | t >> 8) ^ (t & 32768 ? -6 * t / 7 : (t & 65536 ? -9 * t & (t >> 8 & 838 + t >> 13) : 9 * (t & 100)) / 11) * (t >> 8 & 838 + t >> 13) * (t & 14 | t >> 9 | t & 76) ^ (t | 187) ^ t * (t >> 8 & 838 + t >> 13) & 644;
-    WAVEHDR header = { buffer, sizeof(buffer), 0, 0, 0, 0, 0, 0 };
-    waveOutPrepareHeader(hWaveOut, &header, sizeof(WAVEHDR));
-    waveOutWrite(hWaveOut, &header, sizeof(WAVEHDR));
-    waveOutUnprepareHeader(hWaveOut, &header, sizeof(WAVEHDR));
-    waveOutClose(hWaveOut);
-}
-
 VOID WINAPI sound7() {
     HWAVEOUT hWaveOut = 0;
     WAVEFORMATEX wfx = { WAVE_FORMAT_PCM, 1, 8000, 8000, 1, 8, 0 };
@@ -598,71 +799,112 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         int r2 = MessageBox(NULL, L"Are you REALLY sure?", L"Astatine.exe", MB_YESNO | MB_ICONWARNING);
         if (r2 == IDNO) {
             exit;
-        } else {
-            HANDLE thread0 = CreateThread(0, 0, bounce, 0, 0, 0);
-            sound5();
-            Sleep(5000);
-            CreateThread(0, 0, textout, 0, 0, 0);
-            HANDLE thread1 = CreateThread(0, 0, shader1, 0, 0, 0);
-            sound1();
-            Sleep(30000);
-            CreateThread(0, 0, textout, 0, 0, 0);
-            TerminateThread(thread1, 0);
-            CloseHandle(thread1);
-            InvalidateRect(0, 0, 0);
-            CreateThread(NULL, 0, shader5, NULL, 0, NULL);
-            Sleep(100);
-            HANDLE thread2 = CreateThread(0, 0, pacmans, 0, 0, 0);
-            CreateThread(0, 0, meltX, 0, 0, 0);
-            sound6();
-            Sleep(30000);
-            TerminateThread(thread2, 0);
-            CloseHandle(thread2);
-            InvalidateRect(0, 0, 0);
-            Sleep(100);
-            CreateThread(0, 0, shader3, 0, 0, 0);
-            HANDLE thread3 = CreateThread(0, 0, shader5, 0, 0, 0);
-            CreateThread(0, 0, triangle, 0, 0, 0);
-            sound3();
-            CreateThread(0, 0, shader3, 0, 0, 0);
-            Sleep(30000);
-            TerminateThread(thread3, 0);
-            CloseHandle(thread3);
-            InvalidateRect(0, 0, 0);
-            CreateThread(0, 0, shader5, 0, 0, 0);
-            Sleep(100);
-            HANDLE thread4 = CreateThread(0, 0, meltX, 0, 0, 0);
-            CreateThread(0, 0, patblt, 0, 0, 0);
-            CreateThread(0, 0, patblt, 0, 0, 0);
-            CreateThread(0, 0, patblt, 0, 0, 0);
-            CreateThread(0, 0, patblt, 0, 0, 0);
-            CreateThread(0, 0, setpixel, 0, 0, 0);
-            sound4();
-            Sleep(30000);
-            TerminateThread(thread4, 0);
-            CloseHandle(thread4);
-            InvalidateRect(0, 0, 0);
-            Sleep(100);
-            HANDLE thread5 = CreateThread(0, 0, shader4, 0, 0, 0);
-            sound5();
-            Sleep(30000);
-            TerminateThread(thread5, 0);
-            CloseHandle(thread5);
-            InvalidateRect(0, 0, 0);
-            Sleep(100);
-            HANDLE thread6 = CreateThread(0, 0, wef, 0, 0, 0);
-            CreateThread(NULL, 0, bounce, NULL, 0, NULL);
-            sound4();
-            Sleep(30000);
-            CreateThread(NULL, 0, bounce, NULL, 0, NULL);
-            CreateThread(0, 0, shader2, 0, 0, 0);
-            TerminateThread(thread6, 0);
-            CloseHandle(thread6);
-            InvalidateRect(0, 0, 0);
-            Sleep(100);
-            TerminateThread(thread0, 0);
-            CloseHandle(thread0);
-            InvalidateRect(0, 0, 0);
+        }
+        else {
+            while (1) {
+                HANDLE thread0 = CreateThread(0, 0, bounce, 0, 0, 0);
+                sound5();
+                Sleep(5000);
+
+                CreateThread(0, 0, textout, 0, 0, 0);
+                HANDLE thread1 = CreateThread(0, 0, shader1, 0, 0, 0);
+                sound1();
+                Sleep(30000);
+
+                TerminateThread(thread1, 0);
+                CloseHandle(thread1);
+                InvalidateRect(0, 0, 0);
+
+                HANDLE thread2 = CreateThread(0, 0, pacmans, 0, 0, 0);
+                CreateThread(0, 0, shader2, 0, 0, 0);
+                sound2();
+                Sleep(30000);
+
+                TerminateThread(thread2, 0);
+                CloseHandle(thread2);
+                InvalidateRect(0, 0, 0);
+
+                HANDLE thread3 = CreateThread(0, 0, shader3, 0, 0, 0);
+                CreateThread(0, 0, triangle, 0, 0, 0);
+                sound3();
+                Sleep(30000);
+
+                TerminateThread(thread3, 0);
+                CloseHandle(thread3);
+                InvalidateRect(0, 0, 0);
+
+                HANDLE thread4 = CreateThread(0, 0, shader4, 0, 0, 0);
+                CreateThread(0, 0, patblt, 0, 0, 0);
+                sound4();
+                Sleep(30000);
+
+                TerminateThread(thread4, 0);
+                CloseHandle(thread4);
+                InvalidateRect(0, 0, 0);
+
+                HANDLE thread5 = CreateThread(0, 0, shader5, 0, 0, 0);
+                CreateThread(0, 0, meltX, 0, 0, 0);
+                sound5();
+                Sleep(30000);
+
+                TerminateThread(thread5, 0);
+                CloseHandle(thread5);
+                InvalidateRect(0, 0, 0);
+
+                HANDLE thread6 = CreateThread(0, 0, shader6, 0, 0, 0);
+                CreateThread(0, 0, wef, 0, 0, 0);
+                sound7();
+                Sleep(30000);
+
+                TerminateThread(thread6, 0);
+                CloseHandle(thread6);
+                InvalidateRect(0, 0, 0);
+
+                HANDLE thread7 = CreateThread(0, 0, shader7, 0, 0, 0);
+                CreateThread(0, 0, setpixel, 0, 0, 0);
+                sound8();
+                Sleep(30000);
+
+                TerminateThread(thread7, 0);
+                CloseHandle(thread7);
+                InvalidateRect(0, 0, 0);
+
+                HANDLE thread8 = CreateThread(0, 0, shader8, 0, 0, 0);
+                CreateThread(0, 0, shader9, 0, 0, 0);
+                sound1();
+                Sleep(30000);
+
+                TerminateThread(thread8, 0);
+                CloseHandle(thread8);
+                InvalidateRect(0, 0, 0);
+
+
+                HANDLE thread9 = CreateThread(0, 0, shader10, 0, 0, 0);
+                CreateThread(0, 0, shader11, 0, 0, 0);
+                sound2();
+                Sleep(30000);
+
+                TerminateThread(thread9, 0);
+                CloseHandle(thread9);
+                InvalidateRect(0, 0, 0);
+
+                HANDLE thread10 = CreateThread(0, 0, shader10, 0, 0, 0);
+                CreateThread(0, 0, shader11, 0, 0, 0);
+                sound2();
+                Sleep(30000);
+
+                TerminateThread(thread10, 0);
+                CloseHandle(thread10);
+                InvalidateRect(0, 0, 0);
+
+                HANDLE thread11 = CreateThread(0, 0, shader12, 0, 0, 0);
+                sound3();
+                Sleep(30000);
+
+                TerminateThread(thread10, 0);
+                CloseHandle(thread10);
+                InvalidateRect(0, 0, 0);
+            }
         }
     }
 }
